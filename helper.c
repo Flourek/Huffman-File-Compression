@@ -14,7 +14,6 @@ int qsort_asc(const void *p1, const void *p2) {
 
 
 char * int_to_binary_str(int x) {
-
     char *binary_str = calloc(32 + 1,1);
     int k;
 
@@ -29,6 +28,11 @@ char * int_to_binary_str(int x) {
     return binary_str;
 }
 
+int get_file_size(FILE * f){
+    fseek(f, 0, SEEK_END);
+    return ftell(f);
+}
+
 
 FILE * create_file(char path[]){
     struct stat buffer;
@@ -36,7 +40,6 @@ FILE * create_file(char path[]){
 
     char extension[99];
     strcpy(extension,  strrchr(path, '.'));
-
 
     while (!status){   // File exists
         char *p_extension = strrchr(path, '.');

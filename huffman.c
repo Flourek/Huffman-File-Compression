@@ -27,10 +27,10 @@ Node * huffman_tree(const unsigned char input[], int input_s) {
     set = realloc(set, len_s * sizeof(Node));
 
 
-    for (int i = 0; i < len_s; ++i) {
-        printf("%c%d ", set[i].value, set[i].prob);
-    }
-    printf("\n");
+//    for (int i = 0; i < len_s; ++i) {
+//        printf("%c%d ", set[i].value, set[i].prob);
+//    }
+//    printf("\n");
 
 
     while (len_s >= 2) {
@@ -47,12 +47,8 @@ Node * huffman_tree(const unsigned char input[], int input_s) {
         Node *new_set = calloc(len_s, sizeof(Node));
         memmove(new_set, set, (len_s - 1) * sizeof(Node)); // keep "new_node.left" in memory
 
-
-
         new_set[len_s - 1] = new_node;
         set = new_set;
-
-
 
         // use binary search instead
         qsort(set, len_s, sizeof(Node), qsort_asc);
@@ -80,7 +76,7 @@ unsigned char ** generate_codes(Node *s, char *code, unsigned char **codes) {
     if(!s->right && !s->left)
     {
         codes[s->value] = new_code;
-        printf("%c %s ", s->value, new_code);
+//        printf("%c %s ", s->value, new_code);
     }
 
     return codes;

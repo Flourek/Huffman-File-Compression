@@ -8,106 +8,95 @@
 #include "stdint.h"
 
 
-int zip (FILE *src_file, char dest_path[]) {
+void zip (FILE *src_file, char dest_path[]) {
 
-    char extension[PATH_MAX] = "";
-    // gotta save the original extension src_file the .epi, without the dot too
+    EpiFile *zip = calloc(1, sizeof(EpiFile));
+
     char *p_extension = strrchr(dest_path, '.') + 1;
-    strcpy(extension, p_extension);                     //save the original extension
+    strncpy(zip->extension, p_extension, 8);
     strcpy(p_extension, "epi");                         //replace it with "epi"
 
-
-
-    // get the symbols
-
+    // get the file size - number of bytes to zip
     fseek(src_file, 0, SEEK_END);
     int src_size = ftell(src_file);
     fseek(src_file, 0, SEEK_SET);
 
+    // load the contents of the file into a string
     unsigned char *input = calloc(sizeof(char), src_size + 1);
     fread(input, sizeof(char), src_size, src_file);
     input[src_size] = '\0';
 
-//    printf("%s\n", input);
-
+    // build a huffman tree out of the data_str and create a map of codes, where a symbol is the key
     Node *head = huffman_tree(input, src_size);
     char *empty = calloc(256,1);
-    unsigned char **codes_array = calloc(256, 256);
-    codes_array = generate_codes(head, empty, codes_array);
+    unsigned char **codes_map = calloc(256, 256);
+    codes_map = generate_codes(head, empty, codes_map);
 
-
-
-
-    FILE *out = fopen(dest_path, "wb");
-//    FILE *out = create_file(dest_path);
-
-    fwrite(extension, 8, 1, out);
-
-
-
-    int codes_array_len = 0;
+    // get the number of existing codes
+    int codes_map_len = 0;
     for (int i = 0; i < 256; ++i)
-        if(codes_array[i])
-            codes_array_len++;
+        if(codes_map[i]) codes_map_len++;
+    zip->codes_map_len = codes_map_len;
 
-    fwrite(&codes_array_len, sizeof(int), 1, out);
+    zip->codes_map = calloc(codes_map_len, sizeof(CodeBlock));
 
-
-    for (int i = 0; i < 256; ++i)
-        if(codes_array[i]) {
-            Block data;
-            data.code = strtoul(codes_array[i], 0, 2);
-            data.offset = strlen(codes_array[i]);
+    // turn the codes map into a binary format
+    for (int i = 0, j = 0; i < 256; ++i)
+        if(codes_map[i]) {
+            CodeBlock data;
+            data.code = strtoul(codes_map[i], 0, 2);
+            data.offset = strlen(codes_map[i]);
             data.symbol = i;
-            fwrite(&data, sizeof(Block), 1, out);
 
-//            printf("%d%c %s %d\n", i, i, codes_array[i], data.offset);
+            zip->codes_map[j++] = data;
         }
 
-    // translate the original to huffman codes
-    char *data = calloc(src_size * 10, sizeof(char));
-    uint64_t data_length = 0;
+
+    // translate the original contents to a continous string of huffman codes
+    char *data_str = calloc(src_size * 10, sizeof(char));
+    uint64_t data_strlen = 0;
 
     for (int i = 0; i < src_size; i++){
-//        if(data_length >= data_size){
-//            data_size += input_size;
-//            data = realloc(data, data_size);
-//        }
-
-        char *code = codes_array[input[i]];
-        strcat(data, code);
-
-        data_length += strlen(code);
+        char *code = codes_map[input[i]];
+        strcat(data_str, code);
+        data_strlen += strlen(code);
     }
 
 
+    // convert the huffman codes to integers
+    // the last block can be shorter so we have to store it's offset
 
+    int n_blocks_to_write = 1 + data_strlen / DATA_BLOCK_SIZE;
+    char buffer[DATA_BLOCK_SIZE + 1] = "";
 
+    zip->last_block_offset = 0;
+    zip->data_blocks = calloc(n_blocks_to_write, sizeof(DataBlock));
 
-    // convert the huffman codes to integers and write them to the file
-    // the last block has a different size so we have to store it's offset
-    char buffer[BLOCK_SIZE + 1] = "";
-    int last_block_offset = 0;
-    for (int i = 0; i < strlen(data); i += BLOCK_SIZE) {
+    for (int i = 0, j = 0; i < data_strlen; i += DATA_BLOCK_SIZE) {
+        strncpy(buffer, data_str + i, DATA_BLOCK_SIZE);
 
-        strncpy(buffer, data + i, BLOCK_SIZE);
-
-        int len = strlen(buffer);
-        if(len < BLOCK_SIZE){
-            last_block_offset = BLOCK_SIZE - len;
-            memset(buffer+len, '0', last_block_offset);
+        if (i + DATA_BLOCK_SIZE >= data_strlen) {                           // if last block
+            int len = strlen(buffer);
+            zip->last_block_offset = DATA_BLOCK_SIZE - len;
+            memset(buffer + len, '0', zip->last_block_offset);
         }
 
-        uint32_t chunk = strtoul(buffer, 0, 2);
-        fwrite(&chunk, sizeof(uint32_t), 1, out);
+        zip->data_blocks[j++] = strtoul(buffer, 0, 2);
 //        printf("\n%s", buffer);
-
-        strcpy(buffer, "");
     }
 
-    fwrite(&last_block_offset, sizeof(int), 1, out);
+
+    // write to file :)
+    FILE *out = fopen(dest_path, "wb");
+    //    FILE *out = create_file(dest_path);
+
+    fwrite(zip->extension, sizeof(char), 8, out);
+    fwrite(&zip->codes_map_len, sizeof(int), 1, out);
+    fwrite(zip->codes_map, sizeof(CodeBlock), codes_map_len, out);
+    fwrite(&zip->last_block_offset, sizeof(int), 1, out);
+    fwrite(zip->data_blocks, sizeof(DataBlock), n_blocks_to_write, out);
+
     fclose(out);
 
-    return 0;
 }
 

@@ -7,75 +7,62 @@
 #include "string.h"
 #include "stdint.h"
 
-int unzip(FILE * src_file, char dest_path[]) {
+void unzip(FILE * src_file, char dest_path[]) {
 
-    char dest_extension[PATH_MAX];
-    fread(dest_extension, 8, 1, src_file);
+    EpiFile *zip = calloc(1, sizeof(EpiFile));
+
+    fread(zip->extension, sizeof(char), 8, src_file);
+    fread(&zip->codes_map_len, sizeof(int), 1, src_file);
 
     // set the destination path extension to the encoded one
     char *p_extension = strrchr(dest_path, '.') + 1;
-    strncpy(p_extension, dest_extension, strlen(dest_extension));
+    strncpy(p_extension, zip->extension, sizeof(zip->extension));
 
+    // turn the encoded tree information in the a nice map
+    Key *codes_map = calloc(zip->codes_map_len, sizeof(Key));
 
-    // turn the encoded tree information in the 2nd line into a nice lookup table
-    Key *codes_dict = calloc(256, sizeof(Key));
+    for (int i = 0; i < zip->codes_map_len; ++i) {
+        CodeBlock data = {0};
+        fread(&data, sizeof(CodeBlock), 1, src_file);
 
-    int dict_size = 0;
-    fread(&dict_size, sizeof(int), 1, src_file);
-
-
-    for (int i = 0; i < dict_size; ++i) {
-        Block data = {0};
-        fread(&data, sizeof(Block), 1, src_file);
-
-        codes_dict[i].value = data.symbol;
-        strcpy(codes_dict[i].code, int_to_binary_str(data.code) + 32 - data.offset);
-
+        codes_map[i].value = data.symbol;
+        strcpy(codes_map[i].code, int_to_binary_str(data.code) + DATA_BLOCK_SIZE - data.offset);
     }
 
-    codes_dict = realloc(codes_dict, dict_size * sizeof(Key));
+    fread(&zip->last_block_offset, sizeof(int), 1, src_file);
 
+    // turn the binary encoded data into a string of the huffman codes
+    char *data_str = calloc(KB(1), sizeof(char));
+    uint64_t block_count = 0, data_str_len = 0, data_size = KB(1);
+    DataBlock block;
 
-
-//    for (int i = 0; i < dict_size; ++i) {
-//        printf("%c%s ", codes_dict[i].value, codes_dict[i].code);
-//    }
-
-
-    char *binary = calloc(1024, sizeof(char));
-    uint64_t block_c = 0, binary_length = 0, binary_size = 1024;
-    uint32_t block;
-
-    while(fread(&block, sizeof(uint32_t), 1, src_file)){
-        if(binary_length - 16 >= binary_size){
-            binary_size += 1024;
-            binary = realloc(binary, binary_size * 2 * sizeof(char));
+    while(fread(&block, sizeof(DataBlock), 1, src_file)){
+        if(data_str_len - MAX_CODE_LEN >= data_size){
+            data_size += KB(1);
+            data_str = realloc(data_str, data_size * 2);
         }
 
         char *code = int_to_binary_str(block);
-        strcat(binary, code);
+        strncat(data_str, code, DATA_BLOCK_SIZE);
 
-        binary_length += strlen(code);
-        block_c++;
+        data_str_len += strlen(code);
+        block_count++;
     }
 
-    // the last block contains the number of surplus bits in the previous one
-    int cutoff = (block_c - 1) * sizeof(uint32_t) * 8 - block;
-    binary[cutoff] = 0;
-
-
+    data_str_len -= zip->last_block_offset;
+    data_str[data_str_len] = 0;
 
     FILE *out = create_file(dest_path);
 //    FILE *out = fopen("original2.txt", "wb");
 
-    // decode the huffman encoded_tree, iterates over a dict with descending probabilities
-    char buffer[256] = "";
-    for (int i = 0; i < strlen(binary); ++i) {
-        strncat(buffer, &binary[i], 1);
+    // decode the huffman codes
+    char buffer[DATA_BLOCK_SIZE + 1] = "";
+    for (int i = 0; i < data_str_len; ++i) {
+        strncat(buffer, &data_str[i], 1);
 
-        for (int j = 0; j < dict_size; ++j) {
-            if(strcmp(buffer, codes_dict[j].code) == 0){
-                fprintf(out, "%c", codes_dict[j].value);
+        for (int j = 0; j < zip->codes_map_len; ++j) {
+            if(strcmp(buffer, codes_map[j].code) == 0){
+                fprintf(out, "%c", codes_map[j].value);
                 strset(buffer, 0);
             }
         }
@@ -83,5 +70,4 @@ int unzip(FILE * src_file, char dest_path[]) {
 
     fclose(out);
 
-    return 0;
 }
