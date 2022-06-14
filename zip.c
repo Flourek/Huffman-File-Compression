@@ -26,51 +26,70 @@ void zip (FILE *src_file, char dest_path[]) {
     fread(input, sizeof(char), src_size, src_file);
     input[src_size] = '\0';
 
-    // build a huffman tree out of the data_str and create a map of codes, where a symbol is the key
-    Node *head = huffman_tree(input, src_size);
-    char *empty = calloc(256,1);
-    unsigned char **codes_map = calloc(256, 256);
-    codes_map = generate_codes(head, empty, codes_map);
+    printf("\nGenerating Huffman tree...\n");
 
-    // get the number of existing codes
-    int codes_map_len = 0;
-    for (int i = 0; i < 256; ++i)
-        if(codes_map[i]) codes_map_len++;
-    zip->codes_map_len = codes_map_len;
+    CodeMap * map = huffmanify(input, src_size);
 
-    zip->codes_map = calloc(codes_map_len, sizeof(CodeBlock));
+    // Pretty print the codes, ironically the code isn't pretty
+    for (int i = 0; i < map->len; ++i){
+        if(i % 5 == 0)
+            printf("\n");
 
-    // turn the codes map into a binary format
-    for (int i = 0, j = 0; i < 256; ++i)
-        if(codes_map[i]) {
-            CodeBlock data;
-            data.code = strtoul(codes_map[i], 0, 2);
-            data.offset = strlen(codes_map[i]);
-            data.symbol = i;
-
-            zip->codes_map[j++] = data;
+        switch(map->codes[i].symbol) {
+            case '\b': case '\t': case '\n': case '\r': case '\a':
+                printf(" ");
+                break;
+            default:
+                printf("%c", map->codes[i].symbol);
         }
 
+        printf(" %s ", map->codes[i].code);
+        if(map->codes[i].len < 5)
+            printf("\t\t");
+        else
+            printf("\t");
+    }
 
-    // translate the original contents to a continous string of huffman codes
+    zip->codes_map = calloc(sizeof(CodeBlock), map->len);
+    zip->codes_map_len = map->len;
+    for (int i = 0; i < map->len; ++i) {
+        zip->codes_map[i] = (CodeBlock){map->codes[i].symbol, map->codes[i].len};
+    }
+
+    CanonCode hashed_codes[256] = {0};
+    for (int i = 0; i < map->len; ++i)
+        hashed_codes[map->codes[i].symbol] = map->codes[i];
+
+
     char *data_str = calloc(src_size * 10, sizeof(char));
     uint64_t data_strlen = 0;
 
+    printf("\n\nConverting the input to Huffman codes...\n");
+
+    // translate the original contents to a continous string of huffman map
     for (int i = 0; i < src_size; i++){
-        char *code = codes_map[input[i]];
-        strcat(data_str, code);
-        data_strlen += strlen(code);
+        unsigned char symbol = input[i];
+
+        strncpy(data_str + data_strlen,
+                hashed_codes[symbol].code,
+                hashed_codes[symbol].len
+                );
+
+        data_strlen += hashed_codes[symbol].len;
     }
 
 
-    // convert the huffman codes to integers
+    // convert the huffman map to a packed form in 32 bit integers
     // the last block can be shorter so we have to store it's offset
+
+    printf("Writing to file...\n");
 
     int n_blocks_to_write = 1 + data_strlen / DATA_BLOCK_SIZE;
     char buffer[DATA_BLOCK_SIZE + 1] = "";
 
     zip->last_block_offset = 0;
     zip->data_blocks = calloc(n_blocks_to_write, sizeof(DataBlock));
+
 
     for (int i = 0, j = 0; i < data_strlen; i += DATA_BLOCK_SIZE) {
         strncpy(buffer, data_str + i, DATA_BLOCK_SIZE);
@@ -82,21 +101,16 @@ void zip (FILE *src_file, char dest_path[]) {
         }
 
         zip->data_blocks[j++] = strtoul(buffer, 0, 2);
-//        printf("\n%s", buffer);
     }
 
+    FILE *out = create_file(dest_path);
 
-    // write to file :)
-    FILE *out = fopen(dest_path, "wb");
-    //    FILE *out = create_file(dest_path);
-
-    fwrite(zip->extension, sizeof(char), 8, out);
-    fwrite(&zip->codes_map_len, sizeof(int), 1, out);
-    fwrite(zip->codes_map, sizeof(CodeBlock), codes_map_len, out);
-    fwrite(&zip->last_block_offset, sizeof(int), 1, out);
-    fwrite(zip->data_blocks, sizeof(DataBlock), n_blocks_to_write, out);
+    fwrite(zip->extension,          sizeof(zip->extension),             1,                 out);
+    fwrite(&zip->codes_map_len,     sizeof(zip->codes_map_len),         1,                 out);
+    fwrite(zip->codes_map,          sizeof(CodeBlock),                  map->len,          out);
+    fwrite(&zip->last_block_offset, sizeof(zip->last_block_offset),     1,                 out);
+    fwrite(zip->data_blocks,        sizeof(DataBlock),                  n_blocks_to_write, out);
 
     fclose(out);
-
 }
 

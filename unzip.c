@@ -11,60 +11,88 @@ void unzip(FILE * src_file, char dest_path[]) {
 
     EpiFile *zip = calloc(1, sizeof(EpiFile));
 
-    fread(zip->extension, sizeof(char), 8, src_file);
-    fread(&zip->codes_map_len, sizeof(int), 1, src_file);
+    fread(zip->extension,      sizeof(zip->extension), 1, src_file);
+    fread(&zip->codes_map_len, sizeof(zip->codes_map_len), 1, src_file);
 
     // set the destination path extension to the encoded one
+
     char *p_extension = strrchr(dest_path, '.') + 1;
     strncpy(p_extension, zip->extension, sizeof(zip->extension));
 
     // turn the encoded tree information in the a nice map
-    Key *codes_map = calloc(zip->codes_map_len, sizeof(Key));
+    CodeMap * map = calloc(1, sizeof(CodeMap));
+    map->len = zip->codes_map_len;
+    map->codes = calloc(map->len, sizeof(CanonCode));
 
-    for (int i = 0; i < zip->codes_map_len; ++i) {
+    printf("Reconstructing Huffman codes...\n");
+
+    //reconstruct the tree infromation
+    for (int i = 0; i < map->len; ++i) {
         CodeBlock data = {0};
         fread(&data, sizeof(CodeBlock), 1, src_file);
 
-        codes_map[i].value = data.symbol;
-        strcpy(codes_map[i].code, int_to_binary_str(data.code) + DATA_BLOCK_SIZE - data.offset);
+        map->codes[i].symbol = data.symbol;
+        map->codes[i].len = data.len;
     }
 
-    fread(&zip->last_block_offset, sizeof(int), 1, src_file);
+    generate_canonical_codes(map);
+
+//        printf("%c \t%s \t%d  \n", map->codes[i].symbol, map->codes[i].code, strtol(map->codes[i].code, 0 , 2));
+
+
+
+
+    fread(&zip->last_block_offset, sizeof(zip->last_block_offset), 1, src_file);
 
     // turn the binary encoded data into a string of the huffman codes
     char *data_str = calloc(KB(1), sizeof(char));
-    uint64_t block_count = 0, data_str_len = 0, data_size = KB(1);
+    uint64_t block_count = 0, data_strlen = 0, data_size = KB(1000);
     DataBlock block;
 
+
     while(fread(&block, sizeof(DataBlock), 1, src_file)){
-        if(data_str_len - MAX_CODE_LEN >= data_size){
-            data_size += KB(1);
+        if(data_strlen - MAX_CODE_LEN >= data_size){
+            data_size += KB(10000);
             data_str = realloc(data_str, data_size * 2);
         }
 
         char *code = int_to_binary_str(block);
-        strncat(data_str, code, DATA_BLOCK_SIZE);
+        strncpy(data_str + data_strlen, code, DATA_BLOCK_SIZE);
 
-        data_str_len += strlen(code);
+        data_strlen += DATA_BLOCK_SIZE;
         block_count++;
+
     }
 
-    data_str_len -= zip->last_block_offset;
-    data_str[data_str_len] = 0;
+
+    // account for the surplus of bits in the last block
+    data_strlen -= zip->last_block_offset;
+    data_str[data_strlen + 1] = 0;
 
     FILE *out = create_file(dest_path);
-//    FILE *out = fopen("original2.txt", "wb");
+//    FILE *out = fopen("testen/256 e.txt", "wb");
 
-    // decode the huffman codes
+
+    printf("Converting the codes back into the original...\n");
+    printf("Writing to file...\n");
+
+    CanonCode hashed_codes[512] = {0};
+    for (int i = 0; i < map->len; ++i)
+        hashed_codes[strtol(map->codes[i].code, 0 , 2)] = map->codes[i];
+
+    // convert the huffman codes to the original symbols, accorduing to the codes_map
     char buffer[DATA_BLOCK_SIZE + 1] = "";
-    for (int i = 0; i < data_str_len; ++i) {
-        strncat(buffer, &data_str[i], 1);
+    int buffer_strlen = 0;
 
-        for (int j = 0; j < zip->codes_map_len; ++j) {
-            if(strcmp(buffer, codes_map[j].code) == 0){
-                fprintf(out, "%c", codes_map[j].value);
-                strset(buffer, 0);
-            }
+    for (int i = 0; i < data_strlen; ++i) {
+        buffer[buffer_strlen] = data_str[i];
+        buffer_strlen++;
+        int hash_index = strtol(buffer, 0 , 2);
+
+        if (strcmp(buffer, hashed_codes[hash_index].code) == 0){
+            fprintf(out, "%c", hashed_codes[hash_index].symbol);
+            memset(buffer, 0, DATA_BLOCK_SIZE + 1);
+            buffer_strlen = 0;
         }
     }
 

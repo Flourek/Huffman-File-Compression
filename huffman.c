@@ -10,14 +10,12 @@ Node * huffman_tree(const unsigned char input[], int input_s) {
 
     Node *set = calloc(300, sizeof(Node));
 
-    // populate that shit with probabilites and values
+    // populate  with probabilites and values
     for (int i=0; i < input_s; ++i){
         set[input[i]].value = input[i];
         set[input[i]].prob++;
     }
 
-
-    // sort :pape:
     qsort(set, 256, sizeof(Node), qsort_asc);
 
 
@@ -25,12 +23,6 @@ Node * huffman_tree(const unsigned char input[], int input_s) {
     int len_s = 0;
     while(set[len_s].prob) len_s++;
     set = realloc(set, len_s * sizeof(Node));
-
-
-//    for (int i = 0; i < len_s; ++i) {
-//        printf("%c%d ", set[i].value, set[i].prob);
-//    }
-//    printf("\n");
 
 
     while (len_s >= 2) {
@@ -58,7 +50,48 @@ Node * huffman_tree(const unsigned char input[], int input_s) {
 }
 
 
-unsigned char ** generate_codes(Node *s, char *code, unsigned char **codes) {
+void generate_canonical_codes(CodeMap *map){
+    int code = 0;
+    for (int i = 0; i < map->len; ++i) {
+        strncpy(map->codes[i].code, int_to_binary_str(code) + 32 - map->codes[i].len, MAX_CODE_LEN);
+        code = (code + 1) << (map->codes[i + 1].len - map->codes[i].len);
+    }
+}
+
+CodeMap * huffmanify(unsigned char *input, int src_size) {
+
+    // build a huffman tree out of the data_str and create a map of codes, where a symbol is the key
+    Node *head = huffman_tree(input, src_size);
+    char *empty = calloc(256,1);
+    char **codes_map = calloc(256, 256);
+    codes_map = generate_huffman_codes(head, empty, codes_map);
+
+    CodeMap * map = calloc(1, sizeof(CodeMap));
+
+    // get the number of existing codes
+    for (int i = 0; i < 256; ++i)
+        if(codes_map[i]) map->len++;
+
+    map->codes  = calloc(map->len, sizeof(CanonCode));
+
+    for (int i = 0, j = 0; i < 256; ++i)
+        if (codes_map[i]) {
+            map->codes[j].symbol = i;
+            map->codes[j].len = strlen(codes_map[i]);
+            strncpy(map->codes[j].code, codes_map[i], 256);
+            j++;
+        }
+
+    qsort(map->codes, map->len, sizeof(CanonCode), qsort_canon_alphabetically);
+    qsort(map->codes, map->len, sizeof(CanonCode), qsort_canon_codelen);
+
+    generate_canonical_codes(map);
+
+    return map;
+}
+
+
+char ** generate_huffman_codes(Node *s, char *code, char **codes) {
     if(!s) return 0;
 
     // each recursion needs it's own copy to keep the previous ones intact
@@ -68,9 +101,9 @@ unsigned char ** generate_codes(Node *s, char *code, unsigned char **codes) {
         strcat(new_code, &s->code);
 
     if(s->left)
-        codes = generate_codes(s->left, new_code, codes);
+        codes = generate_huffman_codes(s->left, new_code, codes);
     if(s->right)
-        codes = generate_codes(s->right, new_code, codes);
+        codes = generate_huffman_codes(s->right, new_code, codes);
 
     // save the values, runs at the end of every branch
     if(!s->right && !s->left)
