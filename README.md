@@ -12,7 +12,7 @@ Simply drag any file over the executable to compress it or launch it from the te
     char extension[8];       // the first 8 bytes store the extension of the original file 
     int codes_map_len;       // stores how many "CodeBlocks" to read   
     CodeBlock *codes_map;    // stores the huffman codes as SYMBOL | CODE LENGTH to reconstruct the tree
-    int last_block_offset;   // the last "DataBlock" 
+    int last_block_offset;   // the last "DataBlock" has a surplus of bits that aren't codes
     DataBlock *data_blocks;  // packs the otherwise string of binary codes into a 32 bit integer  
 ```
 
