@@ -14,4 +14,8 @@ Simple program that uses Huffman Coding to compress any type of file. It uses ca
 ```
 
 # Requirements
-> CMAKE 3.16.3
+- Windows Only
+- C99
+
+# Compilation
+CMAKE 3.16.3
