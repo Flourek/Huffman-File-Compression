@@ -4,6 +4,9 @@ Simple program that uses Huffman Coding to compress any type of file. It uses ca
 
 > ![Screenshot](images/screenshot.png?raw=true "Title")
 
+# Usage
+Simply drag any file over the executable to compress it or launch it from the terminal providing the path of the file as an argument. It works the exact same way for decompressing files. 
+
 # EPI File specification
 ```c
     char extension[8];       // the first 8 bytes store the extension of the original file 
@@ -18,4 +21,4 @@ Simple program that uses Huffman Coding to compress any type of file. It uses ca
 - C99
 
 # Compilation
-CMAKE 3.16.3
+- CMAKE 3.16.3
